@@ -272,63 +272,7 @@ public:
 		assert(status == 0);
 		return Undefined();
 	}
-	static Handle<Value> DetectSync(const Arguments& args) {
-			HandleScope scope;
-			Magic* obj = ObjectWrap::Unwrap < Magic > (args.This());
 
-			if (args.Length() < 1) {
-				return ThrowException(
-						Exception::TypeError(String::New("Expecting 1 arguments")));
-			}
-			if (!Buffer::HasInstance(args[0])) {
-				return ThrowException(
-						Exception::TypeError(
-								String::New("First argument must be a Buffer")));
-			}
-
-	#if NODE_MAJOR_VERSION == 0 && NODE_MINOR_VERSION < 10
-			Local < Object > buffer_obj = args[0]->ToObject();
-	#else
-			Local<Value> buffer_obj = args[0];
-	#endif
-
-			Baton* baton = new Baton();
-			baton->error = false;
-			baton->error_message = NULL;
-			baton->request.data = baton;
-			baton->data = Buffer::Data(buffer_obj);
-			baton->dataLen = Buffer::Length(buffer_obj);
-			baton->dataIsPath = false;
-			baton->path = obj->mpath;
-			baton->flags = obj->mflags;
-			baton->result = NULL;
-
-			const char* result = magic_buffer(obj->ms , (const void*) baton->data , baton->dataLen);
-
-			Handle<Value> out;
-
-			if (result == NULL) {
-				const char* error = magic_error(obj->ms);
-				if (error) {
-					baton->error = true;
-					baton->error_message = strdup(error);
-				}
-			} else
-				baton->result = strdup(result);
-
-			if (baton->error) {
-	//			Local < Value > err = Exception::Error(
-	//					String::New(baton->error_message));
-				free(baton->error_message);
-				out = Undefined();
-			} else {
-				out = Local<Value>::New(baton->result ? String::New(baton->result) : String::Empty());
-				if (baton->result)
-					free((void*) baton->result);
-			}
-			delete baton;
-			return out;
-		}
 	static void DetectWork(uv_work_t* req) {
 		Baton* baton = static_cast<Baton*>(req->data);
 
@@ -447,7 +391,6 @@ public:
 
 		NODE_SET_PROTOTYPE_METHOD(constructor, "detectFile", DetectFile);
 		NODE_SET_PROTOTYPE_METHOD(constructor, "detect", Detect);
-		NODE_SET_PROTOTYPE_METHOD(constructor, "detectSync", DetectSync);
 		target->Set(String::NewSymbol("setFallback"),
 				FunctionTemplate::New(SetFallback)->GetFunction());
 

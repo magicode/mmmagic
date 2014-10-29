@@ -5,8 +5,102 @@ var Magic = require('./build/Release/magic');
 var fbpath = path.join(__dirname, 'magic', 'magic');
 Magic.setFallback(fbpath);
 
+
+function Magic2(a,b,c){
+	
+	this._detectList = [];
+	this._MagicList = [];
+	this._posMagic = 0;
+	var cpuno = require('os').cpus().length || 1;
+
+	for(var i =0 ;i< cpuno;i++){
+		var magic ;
+		if(arguments.length == 1)
+			magic = new Magic.Magic(a);
+		else if (arguments.length == 2)
+			magic = new Magic.Magic(a,b);
+		else
+			magic = new Magic.Magic(a,b,c);
+		this._MagicList.push(magic);
+	}
+}
+
+Magic2.prototype.detect = function(){
+	this._detectList.push(Array.prototype.slice.call(arguments));
+	this._nextDetect();
+//	var magic = this._MagicList[this._posMagic++%this._MagicList.length];
+//	magic.detect.apply(magic, arguments);
+}
+
+Magic2.prototype.detectFile = function(){
+	var magic = this._MagicList[0];
+	magic.detectFile.apply(magic, arguments);
+}
+
+Magic2.prototype._nextMagic = function(){
+	for(var i in this._MagicList){
+		if(this._MagicList[i] && !this._MagicList[i]._duse){
+			return this._MagicList[i];
+		}
+	}
+	return;
+}
+
+Magic2.prototype._nextDetect = function(){
+	var _this = this;
+
+	while(this._detectList.length){
+		var magic;
+		if( magic = this._nextMagic()){
+			var nextArg = this._detectList.shift();
+			if(nextArg){
+				(function (magic,nextArg){
+					magic._duse = true;
+					var oldCb = nextArg.pop();
+					nextArg.push(function(){
+						magic._duse =  false;
+						oldCb.apply(this, arguments);
+						_this._nextDetect();
+					});
+					
+					magic.detect.apply(magic, nextArg);
+				})(magic,nextArg);
+			}
+		}else{
+			break;
+		}
+	}
+}
+/*
+Magic.Magic.prototype._detect = Magic.Magic.prototype.detect;
+
+Magic.Magic.prototype._nextDetect = function(){
+	var _this = this;
+	if(!this._inWork && this._detectList.length){
+		var nextArg = this._detectList.shift();
+		if(nextArg){
+			this._inWork = true;
+			var oldCb = nextArg.pop();
+			nextArg.push(function(){
+				_this._inWork =  false;
+				oldCb.apply(this, arguments);
+				_this._nextDetect();
+			});
+			this._detect.apply(this, nextArg);
+		}else{
+			this._nextDetect();
+		}
+	}
+}
+
+Magic.Magic.prototype.detect = function(){
+	this._detectList = this._detectList || [];
+	this._detectList.push(Array.prototype.slice.call(arguments));
+	this._nextDetect();
+}
+*/
 module.exports = {
-  Magic: Magic.Magic,
+  Magic: Magic2,
   MAGIC_NONE: 0x000000, /* No flags (default for Windows) */
   MAGIC_DEBUG: 0x000001, /* Turn on debugging */
   MAGIC_SYMLINK: 0x000002, /* Follow symlinks (default for *nix) */
