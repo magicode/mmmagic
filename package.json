@@ -1,11 +1,34 @@
-{ "name": "mmmagic",
-  "version": "0.3.8",
+{
+  "name": "mmmagic",
+  "version": "0.4.0",
   "author": "Brian White <mscdex@mscdex.net>",
   "description": "An async libmagic binding for node.js for detecting content types by data inspection",
   "main": "./index",
-  "scripts": { "install": "node-gyp rebuild" },
-  "engines": { "node": ">=0.6.0" },
-  "keywords": [ "magic", "libmagic", "file", "filetype", "mime", "mimetype" ],
-  "licenses": [ { "type": "MIT", "url": "http://github.com/mscdex/mmmagic/raw/master/LICENSE" } ],
-  "repository" : { "type": "git", "url": "http://github.com/mscdex/mmmagic.git" }
+  "scripts": {
+    "install": "node-gyp rebuild"
+  },
+  "engines": {
+    "node": ">=0.6.0"
+  },
+  "keywords": [
+    "magic",
+    "libmagic",
+    "file",
+    "filetype",
+    "mime",
+    "mimetype"
+  ],
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "http://github.com/mscdex/mmmagic/raw/master/LICENSE"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/mscdex/mmmagic.git"
+  },
+  "dependencies": {
+    "nan": "^2.1.0"
+  }
 }

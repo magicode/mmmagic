@@ -1,3 +1,4 @@
+#include <nan.h>
 #include <node.h>
 #include <node_buffer.h>
 #include <string.h>
@@ -12,7 +13,7 @@ class Magic;
 
 struct Baton {
 	uv_work_t request;
-	Persistent<Function> callback;
+	Nan::Callback *callback;
 
 	char* data;
 	uint32_t dataLen;
@@ -29,7 +30,7 @@ struct Baton {
 	Magic* obj;
 };
 
-static Persistent<FunctionTemplate> constructor;
+static Nan::Persistent<v8::Function> constructor;
 static const char* fallbackPath;
 
 class Magic: public ObjectWrap {
@@ -71,10 +72,16 @@ public:
 		}
 	}
 
-	static Handle<Value> New(const Arguments& args) {
-		HandleScope scope;
+	static void New(const Nan::FunctionCallbackInfo<v8::Value>& args) {
+		Nan::HandleScope scope;
 
-
+		if (!args.IsConstructCall()) {
+		    const int argc = 1; 
+		    v8::Local<v8::Value> argv[argc] = {args[0]};
+		    v8::Local<v8::Function> cons = Nan::New(constructor);
+		    args.GetReturnValue().Set(cons->NewInstance(argc, argv));
+		    return;
+		}
 #ifndef _WIN32
 		int mflags = MAGIC_SYMLINK;
 #else
@@ -85,12 +92,7 @@ public:
 
 		bool loadMagic = 0;
 
-		if (!args.IsConstructCall()) {
-			return ThrowException(
-					Exception::TypeError(
-							String::New(
-									"Use `new` to create instances of this object.")));
-		}
+		
 
 		if (args.Length() > 1) {
 			if (args[1]->IsInt32())
@@ -99,10 +101,7 @@ public:
 				loadMagic = args[1]->ToBoolean()->Value();
 			}
 			else {
-				return ThrowException(
-						Exception::TypeError(
-								String::New(
-										"Second argument must be an integer")));
+				return Nan::ThrowError("Second argument must be an integer");
 			}
 		}
 
@@ -120,10 +119,7 @@ public:
 				use_bundled = false;
 				path = strdup(magic_getpath(NULL, 0/*FILE_LOAD*/));
 			} else {
-				return ThrowException(
-						Exception::TypeError(
-								String::New(
-										"First argument must be a string or integer")));
+				return Nan::ThrowError("First argument must be a string or integer");
 			}
 		}
 
@@ -134,35 +130,28 @@ public:
 
 		obj->Wrap(args.This());
 		obj->Ref();
-
-		return args.This();
+		args.GetReturnValue().Set(args.This());
 	}
 
-	static Handle<Value> DetectFile(const Arguments& args) {
-		HandleScope scope;
+	static void DetectFile(const Nan::FunctionCallbackInfo<v8::Value>& args) {
+		Nan::HandleScope scope;
+		
 		Magic* obj = ObjectWrap::Unwrap < Magic > (args.This());
 
 		if (!args[0]->IsString()) {
-			return ThrowException(
-					Exception::TypeError(
-							String::New("First argument must be a string")));
+			return Nan::ThrowError("First argument must be a string");
 		}
 		if (!args[1]->IsFunction()) {
-			return ThrowException(
-					Exception::TypeError(
-							String::New(
-									"Second argument must be a callback function")));
+			return Nan::ThrowError("Second argument must be a callback function");
 		}
-
-		Local < Function > callback = Local < Function > ::Cast(args[1]);
-
+		
 		String::Utf8Value str(args[0]->ToString());
-
+		
 		Baton* baton = new Baton();
 		baton->error = false;
 		baton->error_message = NULL;
 		baton->request.data = baton;
-		baton->callback = Persistent < Function > ::New(callback);
+		baton->callback = new Nan::Callback( args[1].As<v8::Function>() );
 		baton->data = strdup((const char*) *str);
 		baton->dataIsPath = true;
 		baton->path = obj->mpath;
@@ -174,41 +163,30 @@ public:
 				Magic::DetectWork, (uv_after_work_cb) Magic::DetectAfter);
 		assert(status == 0);
 
-		return Undefined();
+		args.GetReturnValue().SetUndefined();
 	}
 
-	static Handle<Value> Detect(const Arguments& args) {
-		HandleScope scope;
-		Magic* obj = ObjectWrap::Unwrap < Magic > (args.This());
+	static void Detect(const Nan::FunctionCallbackInfo<v8::Value>& args) {
+		Nan::HandleScope scope;
+		Magic* obj = ObjectWrap::Unwrap<Magic>(args.This());
 
 		if (args.Length() < 2) {
-			return ThrowException(
-					Exception::TypeError(String::New("Expecting 2 arguments")));
+			return Nan::ThrowError("Expecting 2 arguments");
 		}
 		if (!Buffer::HasInstance(args[0])) {
-			return ThrowException(
-					Exception::TypeError(
-							String::New("First argument must be a Buffer")));
+			return Nan::ThrowError("First argument must be a Buffer");
 		}
 		if (!args[1]->IsFunction()) {
-			return ThrowException(
-					Exception::TypeError(
-							String::New(
-									"Second argument must be a callback function")));
+			return Nan::ThrowError("Second argument must be a callback function");
 		}
-
-		Local < Function > callback = Local < Function > ::Cast(args[1]);
-#if NODE_MAJOR_VERSION == 0 && NODE_MINOR_VERSION < 10
-		Local < Object > buffer_obj = args[0]->ToObject();
-#else
+		
 		Local<Value> buffer_obj = args[0];
-#endif
-
+		
 		Baton* baton = new Baton();
 		baton->error = false;
 		baton->error_message = NULL;
 		baton->request.data = baton;
-		baton->callback = Persistent < Function > ::New(callback);
+		baton->callback = new Nan::Callback( args[1].As<v8::Function>() );
 		baton->data = Buffer::Data(buffer_obj);
 		baton->dataLen = Buffer::Length(buffer_obj);
 		baton->dataIsPath = false;
@@ -270,7 +248,7 @@ public:
 
 
 		assert(status == 0);
-		return Undefined();
+		args.GetReturnValue().SetUndefined();
 	}
 
 	static void DetectWork(uv_work_t* req) {
@@ -288,8 +266,20 @@ public:
 				baton->flags | MAGIC_NO_CHECK_COMPRESS | MAGIC_ERROR);
 
 			if (magic == NULL) {
-				baton->error_message = strdup(
-						uv_strerror(uv_last_error(uv_default_loop())));
+			  
+			  
+#if NODE_MODULE_VERSION <= 0x000B
+        baton->error_message = strdup(uv_strerror(uv_last_error(uv_default_loop())));
+#else
+// XXX libuv 1.x currently has no public cross-platform function to convert an
+//     OS-specific error number to a libuv error number. `-errno` should work
+//     for *nix, but just passing GetLastError() on Windows will not work ...
+# ifdef _MSC_VER
+        baton->error_message = strdup(uv_strerror(GetLastError()));
+# else
+        baton->error_message = strdup(uv_strerror(-errno));
+# endif
+# endif
 			} else if (magic_load(magic, baton->path) == -1
 					&& magic_load(magic, fallbackPath) == -1) {
 				baton->error_message = strdup(magic_error(magic));
@@ -324,47 +314,45 @@ public:
 	}
 
 	static void DetectAfter(uv_work_t* req) {
-		HandleScope scope;
+		Nan::HandleScope scope;
 		Baton* baton = static_cast<Baton*>(req->data);
 
 		if (baton->error) {
-			Local < Value > err = Exception::Error(
-					String::New(baton->error_message));
+			Local<Value> err = Exception::Error(Nan::New(baton->error_message).ToLocalChecked());
 			free(baton->error_message);
 
 			const unsigned argc = 1;
 			Local<Value> argv[argc] = {err};
 
-			TryCatch try_catch;
-			baton->callback->Call(Context::GetCurrent()->Global(), argc, argv);
+			Nan::TryCatch try_catch;
+			baton->callback->Call(Nan::GetCurrentContext()->Global(), argc, argv);
 			if (try_catch.HasCaught())
-				FatalException(try_catch);
+				Nan::FatalException(try_catch);
 		} else {
 			const unsigned argc = 2;
 			Local<Value> argv[argc] = {
-				Local<Value>::New(Null()),
-				Local<Value>::New(baton->result
-						? String::New(baton->result)
-						: String::Empty())
+				Nan::Null(),
+				(baton->result ? Nan::New(baton->result).ToLocalChecked() : Nan::New("").ToLocalChecked())
 			};
 
 			if (baton->result)
 				free((void*) baton->result);
 
-			TryCatch try_catch;
-			baton->callback->Call(Context::GetCurrent()->Global(), argc, argv);
+			Nan::TryCatch try_catch;
+			baton->callback->Call(Nan::GetCurrentContext()->Global(), argc, argv);
 			if (try_catch.HasCaught())
-				FatalException(try_catch);
+				Nan::FatalException(try_catch);
 		}
 
 		if (baton->dataIsPath)
 			free(baton->data);
-		baton->callback.Dispose();
+		
+		delete baton->callback;
 		delete baton;
 	}
 
-	static Handle<Value> SetFallback(const Arguments& args) {
-		HandleScope scope;
+	static void SetFallback(const Nan::FunctionCallbackInfo<v8::Value>& args ) {
+		Nan::HandleScope scope;
 
 		if (fallbackPath)
 			free((void*) fallbackPath);
@@ -376,33 +364,31 @@ public:
 		} else
 			fallbackPath = NULL;
 
-		return Undefined();
+		args.GetReturnValue().SetUndefined();
 	}
 
-	static void Initialize(Handle<Object> target) {
-		HandleScope scope;
+	static NAN_MODULE_INIT(Initialize) {
+		Nan::HandleScope scope;
+		
+		v8::Local<v8::FunctionTemplate> tpl = Nan::New<v8::FunctionTemplate>(New);
+		
+		Local<String> name = Nan::New("Magic").ToLocalChecked();
+		
+		tpl->InstanceTemplate()->SetInternalFieldCount(1);
+		tpl->SetClassName(name);
 
-		Local < FunctionTemplate > tpl = FunctionTemplate::New(New);
-		Local < String > name = String::NewSymbol("Magic");
-
-		constructor = Persistent < FunctionTemplate > ::New(tpl);
-		constructor->InstanceTemplate()->SetInternalFieldCount(1);
-		constructor->SetClassName(name);
-
-		NODE_SET_PROTOTYPE_METHOD(constructor, "detectFile", DetectFile);
-		NODE_SET_PROTOTYPE_METHOD(constructor, "detect", Detect);
-		target->Set(String::NewSymbol("setFallback"),
-				FunctionTemplate::New(SetFallback)->GetFunction());
-
-		target->Set(name, constructor->GetFunction());
+		Nan::SetPrototypeMethod(tpl,"detectFile", DetectFile);
+		Nan::SetPrototypeMethod(tpl,"detect", Detect);
+		Nan::Set(target, Nan::New("setFallback").ToLocalChecked(), Nan::New<FunctionTemplate>(SetFallback)->GetFunction());
+		
+		Nan::Set(target, name, Nan::GetFunction(tpl).ToLocalChecked());
 	}
 };
 
-extern "C" {
-void init(Handle<Object> target) {
-	HandleScope scope;
+
+NAN_MODULE_INIT(init) {
 	Magic::Initialize(target);
 }
 
 NODE_MODULE(magic, init);
-}
+
